@@ -1,16 +1,7 @@
 {
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/generate" }
-  ],
-  "headers": [
-    {
-      "source": "/(.*)",
-      "headers": [
-        {
-          "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://replicate.delivery; connect-src 'self' https://*.vercel.app;"
-        }
-      ]
+  "functions": {
+    "api/generate.js": {
+      "runtime": "nodejs18.x"
     }
-  ]
+  }
 }
