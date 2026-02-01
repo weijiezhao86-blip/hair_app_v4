@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>AI发型设计师 v1.0</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .container { background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); max-width: 500px; width: 100%; text-align: center; }
+        h1 { color: #1c1e21; margin-bottom: 30px; }
+        .preview-box { border: 2px dashed #ccd0d5; border-radius: 8px; height: 200px; display: flex; justify-content: center; align-items: center; background-color: #f5f6f7; margin-top: 15px; overflow: hidden; }
+        .preview-box img { max-height: 100%; max-width: 100%; }
+        #upload-btn, #result-img { display: none; }
+        .spinner { border: 4px solid rgba(0,0,0,0.1); width: 36px; height: 36px; border-radius: 50%; border-left-color: #1877f2; display: none; margin: 20px auto; animation: spin 1s ease infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        button { background-color: #1877f2; color: white; border: none; padding: 14px 0; border-radius: 6px; font-size: 18px; font-weight: bold; cursor: pointer; transition: background-color 0.3s; width: 100%; margin-top: 20px; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>AI发型设计师</h1>
+        <label for="face-file" class="upload-label">
+            <button type="button" onclick="document.getElementById('face-file').click();">上传您的正面照</button>
+        </label>
+        <input type="file" id="face-file" accept="image/jpeg, image/png" style="display:none;">
+
+        <div id="preview-container" class="preview-box">
+             <span id="preview-text">选择图片后将在此预览</span>
+        </div>
+        
+        <div id="spinner" class="spinner"></div>
+        <p id="status-text"></p>
+        
+        <div class="preview-box" id="result-container" style="display:none;">
+            <img id="result-img" alt="AI生成结果">
+        </div>
+    </div>
+
+    <script>
+        const faceInput = document.getElementById('face-file');
+        const previewContainer = document.getElementById('preview-container');
+        const previewText = document.getElementById('preview-text');
+        const spinner = document.getElementById('spinner');
+        const statusText = document.getElementById('status-text');
+        const resultContainer = document.getElementById('result-container');
+        const resultImg = document.getElementById('result-img');
+
+        faceInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // 1. 显示预览图
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = async (event) => {
+                // 清理旧状态
+                resultContainer.style.display = 'none';
+                previewText.style.display = 'none';
+                previewContainer.innerHTML = `<img src="${event.target.result}" style="max-height:100%;max-width:100%;">`;
+                
+                // 2. 显示加载动画和提示
+                spinner.style.display = 'block';
+                statusText.textContent = '正在连接AI大脑，请稍候...';
+
+                // 3. 调用我们的云函数API
+                try {
+                    const response = await fetch('/api/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ image: event.target.result }),
+                    });
+                    
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        // 4. 显示结果
+                        statusText.textContent = 'AI设计完成！';
+                        resultImg.src = data.result_url;
+                        resultContainer.style.display = 'flex';
+                        resultImg.style.display = 'block';
+                    } else {
+                        throw new Error(data.error);
+                    }
+                } catch (error) {
+                    statusText.textContent = `出错了: ${error.message}`;
+                } finally {
+                    spinner.style.display = 'none'; // 隐藏加载动画
+                }
+            };
+        });
+    </script>
+
+</body>
+</html>
