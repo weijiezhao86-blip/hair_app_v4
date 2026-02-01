@@ -1,0 +1,9 @@
+# netlify.toml
+# 这个文件用来告诉Netlify如何配置我们的网站
+
+[[headers]]
+  # 将下面的安全规则应用到网站的每一个页面
+  for = "/*"
+  [headers.values]
+    # 定义我们的“内容安全策略” (白名单)
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://replicate.delivery; connect-src 'self';"
