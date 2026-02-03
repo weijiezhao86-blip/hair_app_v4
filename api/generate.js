@@ -38,7 +38,11 @@ export default async function handler(req, res) {
 
     // 5. 调用Replicate API，让AI开始工作
     console.log("正在调用Replicate模型:", model);
-    const output = await replicate.run(model, { input });
+    const output = await replicate.run(
+  "rotembeng/hair-replacement:3b334acee17326DEB394471E1B939645550C45041B75DF61B85D6F97D3C523B0", 
+  { input }
+);
+
     console.log("成功获取Replicate输出:", output);
 
     // 6. 将AI生成的结果图片URL返回给前端
