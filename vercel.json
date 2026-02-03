@@ -4,5 +4,12 @@
       "runtime": "nodejs18.x",
       "regions": ["sfo1"]
     }
-  }
+  },
+  "routes": [
+    {
+      "src": "/api/generate",
+      "methods": ["POST"],
+      "dest": "/api/generate"
+    }
+  ]
 }
