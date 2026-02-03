@@ -1,61 +1,65 @@
 // api/generate.js
 
-// 引入Replicate的官方Node.js客户端
-import Replicate from "replicate";
-
-// 这是云函数的核心处理逻辑
+// 注意：我们不再需要Replicate的包了，直接使用原生的fetch
 export default async function handler(req, res) {
-  // 1. 安全地从环境变量中获取您的API Key
-  //    我们稍后会在Vercel上设置这个变量
-  const replicate = new Replicate({
-    auth: process.env.REPLICATE_API_KEY,
-  });
+  // 1. 从Vercel环境变量中，安全地获取我们新的Stability AI Key
+  const apiKey = process.env.STABILITY_AI_KEY;
+  if (!apiKey) {
+    return res.status(500).json({ error: "服务器未配置API密钥" });
+  }
 
-  // 2. 检查请求方法是否为POST
+  // 2. Stability AI的API地址和模型ID
+  const engineId = 'stable-diffusion-xl-1024-v1-0';
+  const apiHost = 'https://api.stability.ai';
+  const apiUrl = `${apiHost}/v1/generation/${engineId}/image-to-image`;
+
+  // 3. 检查请求方法
   if (req.method !== 'POST') {
-    res.setHeader('Allow', 'POST');
     return res.status(405).end('Method Not Allowed');
   }
-    
+
   try {
-    // 3. 从请求中获取用户上传的人脸图片URL (Base64格式)
-    const { image } = req.body;
-    if (!image) {
-      return res.status(400).json({ error: '没有提供图片' });
+    // 4. 准备发送给Stability AI的数据
+    // Stability AI接收的是FormData，而不是JSON
+    const formData = new FormData();
+    
+    // 将前端传来的Base64图片数据转换为Blob对象
+    const base64Response = await fetch(req.body.image);
+    const imageBlob = await base64Response.blob();
+    
+    formData.append('init_image', imageBlob);
+    formData.append('init_image_mode', 'IMAGE_STRENGTH');
+    formData.append('image_strength', 0.45);
+    formData.append('steps', 30);
+    formData.append('seed', 0);
+    formData.append('cfg_scale', 7);
+    formData.append('samples', 1);
+    // 这是我们给AI的指令，告诉它要生成什么发型
+    formData.append('text_prompts[0][text]', 'A person with long wavy brown hair, photorealistic'); 
+    formData.append('text_prompts[0][weight]', 1);
+
+    // 5. 调用Stability AI的API
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Non-200 response: ${await response.text()}`);
     }
 
-    // 4. 定义我们要使用的AI模型和输入
-    // 我们选择一个在Replicate上很流行的发型替换模型
-    // 您可以去Replicate网站寻找更适合的模型，然后替换掉这个`model` ID
-    const model = "rotembeng/hair-replacement:3b334acee17326DEB394471E1B939645550C45041B75DF61B85D6F97D3C523B0";
-    const input = {
-      // 将用户的人脸图片作为输入
-      source_image: image,
-      // 在这里，我们先硬编码一个目标发型作为示例
-      // 终极版本可以改成让用户输入文字，来动态改变这个目标
-      target_hair: "a photo of a woman with long wavy brown hair", 
-    };
+    // 6. 处理返回的结果
+    const data = await response.json();
+    const imageUrl = `data:image/png;base64,${data.artifacts[0].base64}`;
 
-    // 5. 调用Replicate API，让AI开始工作
-    console.log("正在调用Replicate模型:", model);
-    const output = await replicate.run(
-  "fofr/hair-swap:1a7117e0f80b5459461502f65b5331BA3624898516147699742B2FDA7FBA393B",
-  { input }
-);
-
-
-    console.log("成功获取Replicate输出:", output);
-
-    // 6. 将AI生成的结果图片URL返回给前端
-    // Replicate通常会返回一个数组，我们取第一个结果
-    if (output && output.length > 0) {
-      res.status(200).json({ result_url: output[0] });
-    } else {
-      throw new Error("AI未能生成图片");
-    }
+    res.status(200).json({ result_url: imageUrl });
 
   } catch (error) {
-    console.error("Replicate API调用失败:", error);
-    res.status(500).json({ error: "调用AI服务失败" });
+    console.error("Stability API调用失败:", error);
+    res.status(500).json({ error: "调用AI服务失败: " + error.message });
   }
 }
