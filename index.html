@@ -2,30 +2,35 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>AI发型设计师 v1.0</title>
+    <title>AI发型设计师 v2.0 (重构版)</title>
+    <!-- 引入TensorFlow.js和正脸检测模型 -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/face-detection"></script>
     <style>
+        /* 样式部分保持不变，简洁美观 */
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
         .container { background: #fff; padding: 30px; border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,0.08); max-width: 500px; width: 100%; text-align: center; }
         h1 { color: #1c1e21; margin-bottom: 30px; }
-        .preview-box { border: 2px dashed #ccd0d5; border-radius: 8px; height: 200px; display: flex; justify-content: center; align-items: center; background-color: #f5f6f7; margin-top: 15px; overflow: hidden; }
+        .preview-box { border: 2px dashed #ccd0d5; border-radius: 8px; min-height: 200px; display: flex; justify-content: center; align-items: center; background-color: #f5f6f7; margin-top: 15px; overflow: hidden; position: relative; }
         .preview-box img { max-height: 100%; max-width: 100%; }
-        #upload-btn, #result-img { display: none; }
-        .spinner { border: 4px solid rgba(0,0,0,0.1); width: 36px; height: 36px; border-radius: 50%; border-left-color: #1877f2; display: none; margin: 20px auto; animation: spin 1s ease infinite; }
+        .spinner, #status-text { display: none; margin: 20px auto; }
+        .spinner { border: 4px solid rgba(0,0,0,0.1); width: 36px; height: 36px; border-radius: 50%; border-left-color: #1877f2; animation: spin 1s ease infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         button { background-color: #1877f2; color: white; border: none; padding: 14px 0; border-radius: 6px; font-size: 18px; font-weight: bold; cursor: pointer; transition: background-color 0.3s; width: 100%; margin-top: 20px; }
+        .face-box { position: absolute; border: 2px solid rgba(255, 0, 0, 0.7); }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <h1>AI发型设计师 v1.1</h1>
-        <label for="face-file" class="upload-label">
-            <button type="button" onclick="document.getElementById('face-file').click();">上传您的正面照</button>
-        </label>
+        <h1>AI发型设计师 v2.0</h1>
+        <button type-="button" onclick="document.getElementById('face-file').click();">上传照片</button>
         <input type="file" id="face-file" accept="image/jpeg, image/png" style="display:none;">
 
         <div id="preview-container" class="preview-box">
-             <span id="preview-text">选择图片后将在此预览</span>
+             <span id="preview-text">请上传一张清晰的正脸照片</span>
         </div>
         
         <div id="spinner" class="spinner"></div>
@@ -37,58 +42,126 @@
     </div>
 
     <script>
+        // --- 全局变量 ---
         const faceInput = document.getElementById('face-file');
-        const previewContainer = document.getElementById('preview-container');
-        const previewText = document.getElementById('preview-text');
-        const spinner = document.getElementById('spinner');
         const statusText = document.getElementById('status-text');
+        const spinner = document.getElementById('spinner');
         const resultContainer = document.getElementById('result-container');
         const resultImg = document.getElementById('result-img');
+        const previewContainer = document.getElementById('preview-container');
+        let faceDetector;
 
+        // --- 初始化AI模型 ---
+        async function init() {
+            statusText.style.display = 'block';
+            statusText.textContent = '正在初始化AI环境...';
+            await tf.setBackend('webgl');
+            const model = faceDetection.SupportedModels.MediaPipeFaceDetector;
+            const detectorConfig = { runtime: 'tfjs' };
+            faceDetector = await faceDetection.createDetector(model, detectorConfig);
+            statusText.textContent = '初始化完成，请上传照片。';
+        }
+        init();
+
+        // --- 文件选择事件 ---
         faceInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
-            // 1. 显示预览图
-            const reader = new FileReader();
-            reader.readAsDataURL(file);
-            reader.onload = async (event) => {
-                // 清理旧状态
-                resultContainer.style.display = 'none';
-                previewText.style.display = 'none';
-                previewContainer.innerHTML = `<img src="${event.target.result}" style="max-height:100%;max-width:100%;">`;
+            // 清理旧状态
+            cleanup();
+            statusText.style.display = 'block';
+            statusText.textContent = '正在检测人脸...';
+
+            const image = new Image();
+            image.src = URL.createObjectURL(file);
+            image.onload = async () => {
+                previewContainer.innerHTML = '';
+                previewContainer.appendChild(image);
                 
-                // 2. 显示加载动画和提示
-                spinner.style.display = 'block';
-                statusText.textContent = '正在连接AI大脑，请稍候...';
-
-                // 3. 调用我们的云函数API
-                try {
-                    const response = await fetch('/api/generate', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ image: event.target.result }),
-                    });
-                    
-                    const data = await response.json();
-
-                    if (response.ok) {
-                        // 4. 显示结果
-                        statusText.textContent = 'AI设计完成！';
-                        resultImg.src = data.result_url;
-                        resultContainer.style.display = 'flex';
-                        resultImg.style.display = 'block';
-                    } else {
-                        throw new Error(data.error);
-                    }
-                } catch (error) {
-                    statusText.textContent = `出错了: ${error.message}`;
-                } finally {
-                    spinner.style.display = 'none'; // 隐藏加载动画
+                // 1. 正脸检测
+                const faces = await faceDetector.estimateFaces(image);
+                if (faces.length === 0) {
+                    statusText.textContent = '错误：未检测到人脸，请上传清晰的正脸照片。';
+                    return;
                 }
+                if (faces.length > 1) {
+                    statusText.textContent = '错误：检测到多张人脸，请确保照片中只有您自己。';
+                    return;
+                }
+                
+                // (可选) 可以在预览图上画出人脸框
+                const face = faces[0];
+                const faceBoxDiv = document.createElement('div');
+                faceBoxDiv.className = 'face-box';
+                faceBoxDiv.style.left = face.box.xMin + 'px';
+                faceBoxDiv.style.top = face.box.yMin + 'px';
+                faceBoxDiv.style.width = face.box.width + 'px';
+                faceBoxDiv.style.height = face.box.height + 'px';
+                previewContainer.appendChild(faceBoxDiv);
+                
+                statusText.textContent = '人脸检测成功！正在压缩图片...';
+
+                // 2. 图片压缩
+                compressImage(image, 1024, 0.9, async (compressedBlob) => {
+                    statusText.textContent = '压缩完成！正在请求AI设计...';
+                    spinner.style.display = 'block';
+
+                    // 3. 发送给后端
+                    await uploadAndGenerate(compressedBlob);
+                });
             };
         });
-    </script>
 
+        // --- 核心功能函数 ---
+        function compressImage(img, maxWidth, quality, callback) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            let width = img.width;
+            let height = img.height;
+
+            if (width > maxWidth) {
+                height = (maxWidth / width) * height;
+                width = maxWidth;
+            }
+            canvas.width = width;
+            canvas.height = height;
+            ctx.drawImage(img, 0, 0, width, height);
+
+            canvas.toBlob((blob) => {
+                callback(blob);
+            }, 'image/jpeg', quality);
+        }
+
+        async function uploadAndGenerate(blob) {
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'image/jpeg' }, // 直接发送二进制数据
+                    body: blob,
+                });
+                
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error);
+
+                statusText.textContent = 'AI设计完成！';
+                resultImg.src = data.result_url;
+                resultContainer.style.display = 'flex';
+            } catch (error) {
+                statusText.textContent = `出错了: ${error.message}`;
+            } finally {
+                spinner.style.display = 'none';
+            }
+        }
+
+        function cleanup() {
+            spinner.style.display = 'none';
+            statusText.textContent = '';
+            resultContainer.style.display = 'none';
+            resultImg.src = '';
+            previewContainer.innerHTML = '<span id="preview-text">请上传一张清晰的正脸照片</span>';
+        }
+
+    </script>
 </body>
 </html>
